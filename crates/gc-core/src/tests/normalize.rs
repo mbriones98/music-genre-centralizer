@@ -1,4 +1,4 @@
-use crate::normalize;
+use crate::taxonomy::normalize;
 
 #[test]
 fn lowercases() {

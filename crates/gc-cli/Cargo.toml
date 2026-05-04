@@ -1,0 +1,11 @@
+[package]
+name = "gc-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gc-core = { path = "../gc-core" }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1.0.102"
+dirs = "6"
+serde_yaml = "0.9"

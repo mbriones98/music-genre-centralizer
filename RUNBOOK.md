@@ -2,11 +2,11 @@
 
 ## Prerequisites
 
-- **Rust toolchain** (1.75+ required, 1.95+ recommended). Install via [rustup](https://rustup.rs/):
+- **Rust toolchain** (1.85+ required for edition 2024, 1.95+ recommended). Install via [rustup](https://rustup.rs/):
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
-- **No other dependencies** for M1. Future milestones will add Node.js (for the Tauri/React UI).
+- **No other dependencies** for M2. Future milestones will add Node.js (for the Tauri/React UI).
 
 ## Building
 
@@ -18,9 +18,9 @@ cargo build
 cargo build --release
 ```
 
-The binary lands at:
-- Debug: `target/debug/genre-centralizer`
-- Release: `target/release/genre-centralizer`
+The CLI binary lands at:
+- Debug: `target/debug/gc-cli`
+- Release: `target/release/gc-cli`
 
 ## Running
 
@@ -29,10 +29,10 @@ The binary lands at:
 Point it at a folder containing MP3 files. Nothing is modified — it only reads tags and prints proposed mappings.
 
 ```bash
-cargo run -- /path/to/your/music
+cargo run -p gc-cli -- scan /path/to/your/music
 
 # Or run the binary directly after building
-./target/debug/genre-centralizer /path/to/your/music
+./target/debug/gc-cli scan /path/to/your/music
 ```
 
 Example output:
@@ -41,23 +41,59 @@ Example output:
 Scanning: /Users/you/Music/albums
   track01.mp3                                        | Cloud Rap            | -> Hip Hop
   track02.mp3                                        | Rock                 | OK (already canonical)
-  track03.mp3                                        | Vaporwave            | UNKNOWN
+  track03.mp3                                        | Vaporwave            | -> Electronic
   track04.mp3                                        | —                    | SKIP (empty genre)
 
-Summary: 4 MP3s found, 2 matched, 2 unknown/skipped
+Summary: 4 MP3s found, 3 matched, 1 unknown/skipped
 ```
 
 **Reading the output:**
 - `-> Hip Hop` — the genre will be remapped to the canonical genre shown
 - `OK (already canonical)` — no change needed
-- `UNKNOWN` — the genre doesn't match any alias in the taxonomy
+- `UNKNOWN (skipped)` — the genre doesn't match any alias in the taxonomy
 - `SKIP (empty genre)` — the file has no genre tag set
 - `SKIP (no tags)` — the file has no metadata tags at all
+
+### Scan and apply changes
+
+```bash
+cargo run -p gc-cli -- scan --apply /path/to/your/music
+```
+
+This writes the canonical genre to each MP3's TCON tag and preserves the original sub-genre in a TXXX:ORIGINAL_GENRE field.
+
+**Unknown genres:** After the scan, any unmatched genres are presented interactively. For each unknown, you can:
+- Type a number to accept a fuzzy-match suggestion
+- Type any canonical genre name to map it
+- Press Enter to skip
+
+Accepted mappings are saved to your user taxonomy at:
+- macOS: `~/Library/Application Support/genre-centralizer/taxonomy.yaml`
+- Linux: `~/.config/genre-centralizer/taxonomy.yaml`
+
+These persist across runs so the taxonomy self-heals over time.
+
+**Warning:** `--apply` modifies files in place. To test safely, use a copy of your music or the test fixtures:
+
+```bash
+cp -r testdata /tmp/gc-test
+cargo run -p gc-cli -- scan --apply /tmp/gc-test
+```
+
+To restore test fixtures after applying: `git checkout testdata/`
+
+### Validate the taxonomy
+
+```bash
+cargo run -p gc-cli -- taxonomy validate
+```
+
+Checks the bundled taxonomy for ambiguous aliases (same normalized string mapping to different canonical genres).
 
 ### Scan the test fixtures
 
 ```bash
-cargo run -- testdata/
+cargo run -p gc-cli -- scan testdata/
 ```
 
 This uses the bundled synthetic MP3 files to verify the tool works without needing your own music library.
@@ -65,16 +101,20 @@ This uses the bundled synthetic MP3 files to verify the tool works without needi
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (25 tests across taxonomy, classify, normalize, tagio)
 cargo test
 
+# Run only gc-core tests
+cargo test -p gc-core
+
 # Run tests for a specific module
-cargo test normalize       # just normalization tests
-cargo test taxonomy        # just taxonomy tests
-cargo test classify        # just classification tests
+cargo test -p gc-core normalize     # normalization tests
+cargo test -p gc-core taxonomy      # taxonomy loading, fuzzy match, alias tests
+cargo test -p gc-core classify      # genre classification tests
+cargo test -p gc-core tagio         # MP3 tag write round-trip tests
 
 # Run a single test by name
-cargo test mixed_separators
+cargo test -p gc-core suggest_matches
 
 # Run tests with output printed (even passing tests)
 cargo test -- --nocapture
@@ -97,18 +137,15 @@ source "$HOME/.cargo/env"
 
 ### All genres show as UNKNOWN
 
-The hardcoded taxonomy in M1 only covers ~30 aliases across 10 canonical genres (Hip Hop, Rock, Electronic, Jazz, Classical, R&B, Pop, Country, Metal, Folk). If your library uses genres not in this list, they'll show as UNKNOWN. M2 will replace this with a comprehensive YAML taxonomy.
+The YAML taxonomy covers ~248 aliases across 16 canonical genres. If your library uses niche genres not in the list, they'll show as UNKNOWN. Use `--apply` to interactively resolve them and they'll be saved for future runs.
 
 ## Future commands (not yet implemented)
 
 These will be added in later milestones:
 
 ```bash
-# M2: Apply genre changes to MP3 files
-cargo run -- scan --apply /path/to/music
-
-# M2: Validate the taxonomy file for ambiguities
-cargo run -- taxonomy validate
+# M3: Support for FLAC, M4A, OGG, WAV
+cargo run -p gc-cli -- scan --apply /path/to/mixed-format-library
 
 # M4: Launch the desktop app
 cargo tauri dev
